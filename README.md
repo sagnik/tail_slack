@@ -1,0 +1,1 @@
+A simple cli tool to `tail -n 1` a file and push the result to a slack webhook. Should be run as a daemon.

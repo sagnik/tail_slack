@@ -1,18 +1,19 @@
 import time
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, EVENT_TYPE_MODIFIED
+from watchdog.events import FileSystemEventHandler
 from subprocess import Popen, PIPE
 from slack_sdk.webhook import WebhookClient
 
 
 class Watcher:
-    def __init__(self, path, webhook_url):
+    def __init__(self, path, webhook_url, interval):
         self.observer = Observer()
         self.path = path
         self.webhook = WebhookClient(webhook_url)
+        self.interval = interval / 1000
 
     def run(self):
-        event_handler = Handler(webhook = self.webhook)
+        event_handler = Handler(webhook=self.webhook, interval=self.interval)
         self.observer.schedule(event_handler, self.path, recursive=True)
         self.observer.start()
         try:
@@ -26,8 +27,11 @@ class Watcher:
 
 
 class Handler(FileSystemEventHandler):
-    def __init__(self, webhook):
+    def __init__(self, webhook, interval):
         self.webhook = webhook
+        self.interval = interval
+        self.last_event_time = time.time()
+        self.current_event_time = time.time()
 
     @staticmethod
     def read_last_line(_file: str):
@@ -38,9 +42,13 @@ class Handler(FileSystemEventHandler):
         else:
             return res.decode()
 
-    def on_any_event(self, event):
-        if event.event_type == EVENT_TYPE_MODIFIED:
-            response = self.webhook.send(f"[{time.asctime()}]: {self.read_last_line(event.src_path)}")
-            if response.staus_code != 200:
+    def on_modified(self, event):
+        self.current_event_time = time.time()
+        if self.current_event_time - self.last_event_time > self.interval:
+            _con = self.read_last_line(event.src_path)
+            response = self.webhook.send(text=_con)
+            if response.status_code != 200:
                 raise RuntimeError(response.body)
+            self.last_event_time = self.current_event_time
+            
 
